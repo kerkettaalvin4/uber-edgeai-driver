@@ -1,0 +1,11 @@
+{
+  "name": "uber-edgeai-driver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Driver-side logistics platform domain foundation",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/domain/*.test.ts",
+    "test:domain": "node --experimental-strip-types --test tests/domain/*.test.ts"
+  }
+}
