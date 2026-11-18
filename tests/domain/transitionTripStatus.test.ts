@@ -1,52 +1,62 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
 import {
   canTransitionTripStatus,
   mergeTripStatus,
   transitionTripStatus,
-} from '../../src/domain/usecases/transitionTripStatus.ts';
+} from '../../src/domain/usecases/transitionTripStatus';
 
-test('allows each forward trip lifecycle transition', () => {
-  assert.equal(transitionTripStatus('EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP'), 'ARRIVED_AT_PICKUP');
-  assert.equal(transitionTripStatus('ARRIVED_AT_PICKUP', 'ON_TRIP'), 'ON_TRIP');
-  assert.equal(transitionTripStatus('ON_TRIP', 'COMPLETED'), 'COMPLETED');
-});
+describe('trip lifecycle', () => {
+  it('allows each forward trip lifecycle transition', () => {
+    expect(
+      transitionTripStatus('EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP'),
+    ).toBe('ARRIVED_AT_PICKUP');
+    expect(transitionTripStatus('ARRIVED_AT_PICKUP', 'ON_TRIP')).toBe(
+      'ON_TRIP',
+    );
+    expect(transitionTripStatus('ON_TRIP', 'COMPLETED')).toBe('COMPLETED');
+  });
 
-test('rejects skipped, backward, and post-completion transitions', () => {
-  assert.equal(canTransitionTripStatus('EN_ROUTE_TO_PICKUP', 'ON_TRIP'), false);
-  assert.equal(transitionTripStatus('ON_TRIP', 'ARRIVED_AT_PICKUP'), null);
-  assert.equal(transitionTripStatus('COMPLETED', 'ON_TRIP'), null);
-});
+  it('rejects skipped, backward, and post-completion transitions', () => {
+    expect(canTransitionTripStatus('EN_ROUTE_TO_PICKUP', 'ON_TRIP')).toBe(
+      false,
+    );
+    expect(transitionTripStatus('ON_TRIP', 'ARRIVED_AT_PICKUP')).toBeNull();
+    expect(transitionTripStatus('COMPLETED', 'ON_TRIP')).toBeNull();
+  });
 
-test('allows cancellation from every lifecycle state', () => {
-  const states = [
-    'EN_ROUTE_TO_PICKUP',
-    'ARRIVED_AT_PICKUP',
-    'ON_TRIP',
-    'COMPLETED',
-  ] as const;
+  it('allows cancellation from every lifecycle state', () => {
+    const states = [
+      'EN_ROUTE_TO_PICKUP',
+      'ARRIVED_AT_PICKUP',
+      'ON_TRIP',
+      'COMPLETED',
+    ] as const;
 
-  for (const state of states) {
-    assert.equal(transitionTripStatus(state, 'CANCELLED'), 'CANCELLED');
-  }
-});
+    for (const state of states) {
+      expect(transitionTripStatus(state, 'CANCELLED')).toBe('CANCELLED');
+    }
+  });
 
-test('merges the more advanced state and cancellation wins', () => {
-  assert.equal(mergeTripStatus('EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP'), 'ARRIVED_AT_PICKUP');
-  assert.equal(mergeTripStatus('ARRIVED_AT_PICKUP', 'EN_ROUTE_TO_PICKUP'), 'ARRIVED_AT_PICKUP');
-  assert.equal(mergeTripStatus('COMPLETED', 'CANCELLED'), 'CANCELLED');
-});
+  it('merges the more advanced state and cancellation wins', () => {
+    expect(
+      mergeTripStatus('EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP'),
+    ).toBe('ARRIVED_AT_PICKUP');
+    expect(
+      mergeTripStatus('ARRIVED_AT_PICKUP', 'EN_ROUTE_TO_PICKUP'),
+    ).toBe('ARRIVED_AT_PICKUP');
+    expect(mergeTripStatus('COMPLETED', 'CANCELLED')).toBe('CANCELLED');
+  });
 
-test('merge is idempotent', () => {
-  const states = [
-    'EN_ROUTE_TO_PICKUP',
-    'ARRIVED_AT_PICKUP',
-    'ON_TRIP',
-    'COMPLETED',
-    'CANCELLED',
-  ] as const;
+  it('merges each status idempotently', () => {
+    const states = [
+      'EN_ROUTE_TO_PICKUP',
+      'ARRIVED_AT_PICKUP',
+      'ON_TRIP',
+      'COMPLETED',
+      'CANCELLED',
+    ] as const;
 
-  for (const state of states) {
-    assert.equal(mergeTripStatus(state, state), state);
-  }
+    for (const state of states) {
+      expect(mergeTripStatus(state, state)).toBe(state);
+    }
+  });
 });

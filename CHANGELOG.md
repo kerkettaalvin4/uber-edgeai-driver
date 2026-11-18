@@ -3,4 +3,5 @@
 ## Unreleased
 
 - Added the first pure TypeScript domain feature: PRD trip lifecycle transitions and max-ordinal status merging.
-- Added focused tests runnable with the installed Node.js test runner; no project dependencies were installed.
+- Added the React Native 0.88 New Architecture app shell and Android/iOS project scaffolds.
+- Added Jest and React Native Testing Library setup for domain and app-root tests.
