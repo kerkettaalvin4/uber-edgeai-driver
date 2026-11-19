@@ -8,11 +8,11 @@
 - Added Jest, React Native Testing Library, ESLint, and TypeScript check scripts.
 - Added pure HLC generation, receive, comparison, and serialization logic following PRD Section 10.3.
 - Added the separate backend gateway foundation: dev JWT issuance, authenticated `/v1/stream`, common envelope validation, heartbeat pong, Redis 500-frame/10-minute resume buffer, and development Compose services for Redis and PostGIS.
-- Added the first `/v1/sync` slice with UUIDv7 operation validation, PostgreSQL idempotency records, and per-driver server clocks.
+- Added `/v1/sync` with UUIDv7 idempotency, PostgreSQL persistence, and server-side max-ordinal, HLC last-writer-wins, and observed-remove set merges.
 
 ## Current feature
 
-- Day 4 sync foundation: API, PostgreSQL store, and duplicate-op behavior implemented; scenario replay and full CRDT merged-state behavior remain pending.
+- Day 4 sync foundation: API, PostgreSQL store, duplicate-op handling, and CRDT merged state implemented; scenario replay remains pending.
 
 ## Pending
 
@@ -28,7 +28,7 @@
 - `npm test -- --runInBand` — 3 suites, 14 tests passed, including 8 HLC cases.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
-- `cd backend && npm test` — 5 gateway and sync tests passed.
+- `cd backend && npm test` — 9 gateway, sync, and CRDT tests passed.
 - `cd backend && npm run typecheck` — passed.
 - `cd backend && npm run build` — passed.
 - Backend `npm audit` — 0 vulnerabilities after updating the Vitest test runner.
@@ -54,4 +54,5 @@
 
 - Day 4 of 30-day plan: in progress.
 - Days remaining: 26.
+
 

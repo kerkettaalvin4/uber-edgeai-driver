@@ -8,5 +8,6 @@
 - Added pure TypeScript Hybrid Logical Clock tick, receive, compare, and serialization logic with focused tests.
 - Added an isolated Fastify telemetry gateway foundation with development JWT issuance, authenticated WebSocket stream, envelope validation, heartbeat pong, and Redis resume buffering.
 - Added Docker Compose services for the gateway, Redis, and PostGIS-backed PostgreSQL.
-- Added an authenticated `/v1/sync` endpoint with UUIDv7 operation validation, PostgreSQL idempotency records, and per-driver server clocks.
+- Added an authenticated `/v1/sync` endpoint with UUIDv7 idempotency, PostgreSQL-backed state, and max-ordinal, HLC last-writer-wins, and observed-remove set merges.
+
 
