@@ -92,5 +92,45 @@ describe('telemetry gateway', () => {
     });
     expect(response.statusCode).toBe(400);
   });
+
+  it('replays the synthetic drive, surge cycles, and route update to a resumed stream', async () => {
+    const app = await start();
+    const token = (await app.inject({ method: 'POST', url: '/v1/dev-token' })).json().token as string;
+    const address = app.server.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP address');
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/v1/stream`, { headers: { authorization: `Bearer ${token}` } });
+    await new Promise<void>((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    socket.send(JSON.stringify(createEnvelope('session.resume', 1, 0, { lastServerSeq: 0, lastClientSeqAcked: 0 })));
+    const pongPromise = receive(socket);
+    socket.send(JSON.stringify(createEnvelope('system.ping', 2, 0, {})));
+    await pongPromise;
+
+    const frames: Array<Record<string, unknown>> = [];
+    const expectedCount = 17;
+    const messagesDone = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Scenario replay timed out')), 5_000);
+      socket.on('message', data => {
+        frames.push(JSON.parse(data.toString()) as Record<string, unknown>);
+        if (frames.length === expectedCount) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/v1/dev/scenarios/blr-short-drive-v1/replay',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { tripId: 'trip-demo-1', maxMessagesPerSecond: 20 },
+    });
+    expect(response.statusCode).toBe(202);
+    await messagesDone;
+    const types = frames.map(frame => frame.type);
+    expect(types.filter(type => type === 'telemetry.location.batch')).toHaveLength(11);
+    expect(types.filter(type => type === 'pricing.surge')).toHaveLength(5);
+    expect(types.filter(type => type === 'route.update')).toHaveLength(1);
+    expect(frames.map(frame => frame.seq)).toEqual([...frames.map(frame => frame.seq)].sort((a, b) => Number(a) - Number(b)));
+    socket.close();
+  });
 });
+
 

@@ -9,15 +9,16 @@
 - Added pure HLC generation, receive, comparison, and serialization logic following PRD Section 10.3.
 - Added the separate backend gateway foundation: dev JWT issuance, authenticated `/v1/stream`, common envelope validation, heartbeat pong, Redis 500-frame/10-minute resume buffer, and development Compose services for Redis and PostGIS.
 - Added `/v1/sync` with UUIDv7 idempotency, PostgreSQL persistence, and server-side max-ordinal, HLC last-writer-wins, and observed-remove set merges.
+- Added a development-only synthetic Bengaluru replay with 11 location fixes, five H3 resolution-8 surge deltas, and a route update.
 
 ## Current feature
 
-- Day 4 sync foundation: API, PostgreSQL store, duplicate-op handling, and CRDT merged state implemented; scenario replay remains pending.
+- Day 4 gateway milestone: `/v1/sync`, PostgreSQL idempotency, CRDT merged state, and synthetic WebSocket scenario replay implemented.
 
 ## Pending
 
 - Persist HLC values through `sync_meta` and emit the clock-skew warning in the data layer.
-- Add the scenario generator and complete server-side CRDT conflict merging for `/v1/sync`.
+- Connect the React Native app to authenticated gateway streams and sync.
 - Set up the development environment with Android SDK/JDK and Docker.
 - Verify starter repository and `/ml` assets; none are in the current workspace.
 
@@ -28,7 +29,7 @@
 - `npm test -- --runInBand` — 3 suites, 14 tests passed, including 8 HLC cases.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
-- `cd backend && npm test` — 9 gateway, sync, and CRDT tests passed.
+- `cd backend && npm test` — 13 gateway, sync, CRDT, and scenario tests passed.
 - `cd backend && npm run typecheck` — passed.
 - `cd backend && npm run build` — passed.
 - Backend `npm audit` — 0 vulnerabilities after updating the Vitest test runner.
@@ -40,6 +41,7 @@
 - HLC calculation is implemented, but database persistence and skew-warning logging are not wired in yet.
 - Docker Compose was added but not executed because Docker is unavailable in this environment.
 - PostgreSQL sync integration was not executed because Docker is unavailable; tests use the in-memory adapter.
+- Scenario route data is synthetic because recorded GPX files were not present in the workspace.
 - Android build tools and Docker are unavailable in this environment; iOS native builds require macOS.
 - Android and iOS native builds have not been run.
 
@@ -49,10 +51,13 @@
 - `0926e77` — `feat(app): scaffold React Native foundation`.
 - `1d343e7` — `feat(domain): implement hybrid logical clock`.
 - `74c0c30` — `feat(backend): add telemetry gateway foundation`.
+- `c17bff6` — `feat(sync): add idempotent offline sync endpoint`.
+- `d13de63` — `feat(sync): merge offline operations with CRDT rules`.
 
 ## Schedule
 
 - Day 4 of 30-day plan: in progress.
 - Days remaining: 26.
+
 
 
