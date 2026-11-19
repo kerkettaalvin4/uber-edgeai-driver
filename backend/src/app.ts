@@ -4,10 +4,12 @@ import websocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
 import { createEnvelope, envelopeSchema } from './protocol.js';
 import type { ResumeStore } from './resume-store.js';
+import { MemorySyncStore, syncRequestSchema, type SyncStore } from './sync.js';
 
 export interface AppOptions {
   jwtSecret: string;
   resumeStore: ResumeStore;
+  syncStore?: SyncStore;
   nodeEnv?: string;
 }
 
@@ -18,6 +20,25 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(websocket);
 
   app.get('/health', async () => ({ status: 'ok' }));
+
+  const syncStore = options.syncStore ?? new MemorySyncStore();
+  app.post('/v1/sync', {
+    preValidation: async (request, reply) => {
+      try {
+        const header = request.headers.authorization;
+        if (!header?.startsWith('Bearer ')) throw new Error('Bearer token required');
+        request.user = app.jwt.verify(header.slice(7));
+      } catch {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+    },
+  }, async (request, reply) => {
+    const body = syncRequestSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_sync_request', issues: body.error.issues });
+    const user = request.user as { sub?: string };
+    if (!user.sub) return reply.code(401).send({ error: 'unauthorized' });
+    return syncStore.sync(user.sub, body.data);
+  });
 
   if (options.nodeEnv !== 'production') {
     app.post('/v1/dev-token', async (_request, reply) => {

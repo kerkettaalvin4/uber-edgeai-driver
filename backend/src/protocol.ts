@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 
 export const envelopeSchema = z.object({
   v: z.literal(1),
@@ -17,7 +18,7 @@ export function createEnvelope(
   seq: number,
   ackSeq: number,
   payload: Record<string, unknown>,
-  traceId = crypto.randomUUID(),
+  traceId = randomUUID(),
 ): Envelope {
   return { v: 1, type, seq, ackSeq, ts: Date.now(), traceId, payload };
 }

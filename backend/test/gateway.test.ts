@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 import { createApp } from '../src/app.js';
 import { createEnvelope } from '../src/protocol.js';
 import { MemoryResumeStore } from '../src/resume-store.js';
+import type { SyncOperation, SyncRequest } from '../src/sync.js';
 
 const SECRET = 'local-test-secret-which-is-at-least-32-characters';
 const apps: Awaited<ReturnType<typeof createApp>>[] = [];
@@ -62,6 +63,34 @@ describe('telemetry gateway', () => {
     expect(pong.type).toBe('system.pong');
     expect(pong.seq).toBeGreaterThan(0);
     socket.close();
+  });
+
+  it('accepts authenticated sync operations and deduplicates UUIDv7 opIds', async () => {
+    const app = await start();
+    const token = (await app.inject({ method: 'POST', url: '/v1/dev-token' })).json().token as string;
+    const operation: SyncOperation = {
+      opId: '0192f7a1-6b2e-7c11-9a3d-5e2f1c0b7d44',
+      entity: 'trip', entityId: 'trip-1', field: 'status', crdt: 'max_ordinal',
+      value: { status: 'ARRIVED_AT_PICKUP', ordinal: 3 },
+      hlc: '1791460401222:0004:dev_a19c', vclock: { dev_a19c: 55, server: 30410 },
+    };
+    const request: SyncRequest = { sinceServerVersion: 0, clientClock: { dev_a19c: 55, server: 30410 }, ops: [operation] };
+    const first = await app.inject({ method: 'POST', url: '/v1/sync', headers: { authorization: `Bearer ${token}` }, payload: request });
+    const retry = await app.inject({ method: 'POST', url: '/v1/sync', headers: { authorization: `Bearer ${token}` }, payload: request });
+    expect(first.statusCode).toBe(200);
+    expect(first.json().accepted).toEqual([operation.opId]);
+    expect(retry.json().accepted).toEqual([operation.opId]);
+    expect(retry.json().serverVersion).toBe(first.json().serverVersion);
+  });
+
+  it('rejects malformed sync operations', async () => {
+    const app = await start();
+    const token = (await app.inject({ method: 'POST', url: '/v1/dev-token' })).json().token as string;
+    const response = await app.inject({
+      method: 'POST', url: '/v1/sync', headers: { authorization: `Bearer ${token}` },
+      payload: { sinceServerVersion: 0, clientClock: {}, ops: [{ opId: 'not-a-uuidv7' }] },
+    });
+    expect(response.statusCode).toBe(400);
   });
 });
 
