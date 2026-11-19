@@ -10,15 +10,17 @@
 - Added the separate backend gateway foundation: dev JWT issuance, authenticated `/v1/stream`, common envelope validation, heartbeat pong, Redis 500-frame/10-minute resume buffer, and development Compose services for Redis and PostGIS.
 - Added `/v1/sync` with UUIDv7 idempotency, PostgreSQL persistence, and server-side max-ordinal, HLC last-writer-wins, and observed-remove set merges.
 - Added a development-only synthetic Bengaluru replay with 11 location fixes, five H3 resolution-8 surge deltas, and a route update.
+- Added a React Native gateway demo screen that obtains a development token, resumes the WebSocket, replays the drive, and submits a demo trip-status sync operation.
 
 ## Current feature
 
-- Day 4 gateway milestone: `/v1/sync`, PostgreSQL idempotency, CRDT merged state, and synthetic WebSocket scenario replay implemented.
+- React Native gateway integration: development auth, WebSocket resume, scenario playback, and one `/v1/sync` operation are wired into the app shell.
 
 ## Pending
 
 - Persist HLC values through `sync_meta` and emit the clock-skew warning in the data layer.
-- Connect the React Native app to authenticated gateway streams and sync.
+- Verify gateway integration in the Android emulator or on a device.
+- Replace the demo trip-status action with the real local outbox and persisted HLC workflow.
 - Set up the development environment with Android SDK/JDK and Docker.
 - Verify starter repository and `/ml` assets; none are in the current workspace.
 
@@ -27,6 +29,7 @@
 - `npm install` — installed 884 packages; audit reported 0 vulnerabilities.
 - Previous checkpoint: 2 Jest suites, 6 tests; lint and typecheck passed; Android JS bundle generated.
 - `npm test -- --runInBand` — 3 suites, 14 tests passed, including 8 HLC cases.
+- `npm test -- --runInBand` — 4 suites, 15 tests passed after adding the gateway client test.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
 - `cd backend && npm test` — 13 gateway, sync, CRDT, and scenario tests passed.

@@ -16,4 +16,6 @@ test('shows the EdgeAI driver app root', async () => {
   expect(
     screen.getByRole('header', { name: 'Uber EdgeAI Driver' }),
   ).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Connect to gateway' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Start demo drive' })).toBeDisabled();
 });

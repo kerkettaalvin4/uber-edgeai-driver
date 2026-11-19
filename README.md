@@ -30,6 +30,10 @@ The backend is a separate TypeScript service; it is not part of the React Native
 
 To work on just the service without Docker, run `npm install` in `backend`, start Redis and PostgreSQL, copy `backend/.env.example` to `backend/.env` and load those variables in your shell, then run `npm run dev` from `backend`. Backend checks are `npm test`, `npm run typecheck`, and `npm run build` from that directory.
 
+## Connect the Android emulator to the gateway
+
+Start the stack with `docker compose up --build`, then start Metro with `npm start` and launch the app in another terminal with `npm run android`. The demo screen uses `http://10.0.2.2:3001` for the Android emulator. Tap **Connect to gateway**, then **Start demo drive** to see location, surge, and route messages; **Sync demo status** sends one UUIDv7 status operation to `/v1/sync`. For an iOS simulator, the app uses `localhost`; for a physical phone, change the base URL in `src/config/gateway.ts` to your computer's LAN IP.
+
 ## Architecture
 
 - `src/domain` holds pure TypeScript business rules.
