@@ -24,6 +24,12 @@ npm start
 
 In another terminal, run `npm run android` or `npm run ios` after setting up the relevant native toolchain and emulator/device.
 
+## Telemetry gateway (development)
+
+The backend is a separate TypeScript service; it is not part of the React Native bundle. To run it with Redis and PostGIS using Docker Compose, copy `.env.example` to `.env`, replace the development JWT secret with a random value of at least 32 characters, then run `docker compose up --build`. The gateway listens on port 3001. Request a local development token with `POST http://localhost:3001/v1/dev-token`, then connect to `ws://localhost:3001/v1/stream` with `Authorization: Bearer <token>`.
+
+To work on just the service without Docker, run `npm install` in `backend`, start a Redis instance, copy `backend/.env.example` to `backend/.env` and load those variables in your shell, then run `npm run dev` from `backend`. Backend checks are `npm test`, `npm run typecheck`, and `npm run build` from that directory.
+
 ## Architecture
 
 - `src/domain` holds pure TypeScript business rules.
@@ -33,3 +39,4 @@ In another terminal, run `npm run android` or `npm run ios` after setting up the
 - `native` will hold Codegen specifications and native module implementations.
 
 See [docs/PROGRESS.md](docs/PROGRESS.md) for implemented work, tests, and known environment limitations.
+
