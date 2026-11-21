@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createHlc, hlcNow, hlcReceive, serializeHlc, type HlcTimestamp } from '../domain/hlc';
+import { TRIP_STATUS_ORDINAL, type TripStatus } from '../domain/entities/TripStatus';
+import { mergeTripStatus, transitionTripStatus as applyTripTransition } from '../domain/usecases/transitionTripStatus';
 
 const STORAGE_KEY = '@uber-edgeai/sync-state-v1';
 const CLOCK_SKEW_WARNING_MS = 60_000;
@@ -27,6 +29,7 @@ export interface SyncReceipt {
   serverVersion: number;
   serverClock?: Record<string, number>;
   changes?: Array<{ hlc: string }>;
+  mergedState?: Record<string, Record<string, Record<string, { status?: unknown }>>>;
 }
 
 export interface KeyValueStorage {
@@ -40,6 +43,7 @@ interface PersistedState {
   serverVersion: number;
   vclock: Record<string, number>;
   outbox: SyncOperation[];
+  tripStatuses: Record<string, TripStatus>;
 }
 
 const initialState = (): PersistedState => {
@@ -50,6 +54,7 @@ const initialState = (): PersistedState => {
     serverVersion: 0,
     vclock: { [nodeId]: 0, server: 0 },
     outbox: [],
+    tripStatuses: {},
   };
 };
 
@@ -62,12 +67,21 @@ export class SyncOutbox {
     },
   ) {}
 
-  async enqueueTripStatus(
-    tripId: string,
-    status: string,
-    ordinal: number,
-  ): Promise<SyncOperation> {
+  async getTripStatus(tripId: string): Promise<TripStatus> {
     const state = await this.load();
+    return state.tripStatuses[tripId] ?? 'EN_ROUTE_TO_PICKUP';
+  }
+
+  async transitionTripStatus(
+    tripId: string,
+    nextStatus: TripStatus,
+  ): Promise<TripStatus | null> {
+    const state = await this.load();
+    const current = state.tripStatuses[tripId] ?? 'EN_ROUTE_TO_PICKUP';
+    const transitioned = applyTripTransition(current, nextStatus);
+    if (!transitioned) return null;
+    if (transitioned === current) return current;
+
     const now = this.wallClock();
     state.hlc = hlcNow(state.hlc, now);
     state.vclock[state.nodeId] = (state.vclock[state.nodeId] ?? 0) + 1;
@@ -77,13 +91,14 @@ export class SyncOutbox {
       entityId: tripId,
       field: 'status',
       crdt: 'max_ordinal',
-      value: { status, ordinal },
+      value: { status: transitioned, ordinal: TRIP_STATUS_ORDINAL[transitioned] },
       hlc: serializeHlc(state.hlc),
       vclock: { ...state.vclock },
     };
     state.outbox.push(operation);
+    state.tripStatuses[tripId] = transitioned;
     await this.save(state);
-    return operation;
+    return transitioned;
   }
 
   async createRequest(): Promise<SyncRequest> {
@@ -111,6 +126,12 @@ export class SyncOutbox {
       state.hlc = result.timestamp;
       if (result.clockSkewMs > CLOCK_SKEW_WARNING_MS) this.onClockSkew(result.clockSkewMs);
     }
+    for (const [tripId, trip] of Object.entries(receipt.mergedState?.trip ?? {})) {
+      const remoteStatus = trip.status?.status;
+      if (!isTripStatus(remoteStatus)) continue;
+      const localStatus = state.tripStatuses[tripId] ?? 'EN_ROUTE_TO_PICKUP';
+      state.tripStatuses[tripId] = mergeTripStatus(localStatus, remoteStatus);
+    }
     await this.save(state);
   }
 
@@ -124,7 +145,7 @@ export class SyncOutbox {
     try {
       const state = JSON.parse(raw) as PersistedState;
       if (!state.nodeId || !state.hlc || !Array.isArray(state.outbox)) throw new Error('invalid state');
-      return state;
+      return { ...state, tripStatuses: state.tripStatuses ?? {} };
     } catch {
       // Corrupt persisted state should not block the driver from using the app.
       return initialState();
@@ -155,4 +176,8 @@ function createUuidV7(timestamp: number): string {
 
 function randomHex(length: number): string {
   return Array.from({ length }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+}
+
+function isTripStatus(value: unknown): value is TripStatus {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(TRIP_STATUS_ORDINAL, value);
 }

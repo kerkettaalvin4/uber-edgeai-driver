@@ -12,6 +12,7 @@
 - Added a development-only synthetic Bengaluru route replay that emits location batches, H3 resolution-8 surge deltas, and route updates to resumed WebSocket clients.
 - Connected the React Native demo screen to development token issuance, WebSocket resume, scenario replay, and offline sync status submission.
 - Added an AsyncStorage-backed sync outbox with persisted HLC/vclock/server-version metadata, retry-on-next-sync behavior, and a warning for remote clocks more than 60 seconds ahead.
+- Added an active-trip screen with valid advance/cancel actions, local trip status persistence, queued sync retries, and server merged-state reconciliation.
 
 
 

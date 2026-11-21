@@ -18,6 +18,9 @@ import {
   type GatewayConnectionState,
   type GatewayFrame,
 } from './src/data/GatewayClient';
+import { TRIP_STATUS_ORDINAL, type TripStatus } from './src/domain/entities/TripStatus';
+
+const DEMO_TRIP_ID = 'trip-mobile-demo-001';
 
 interface LocationSummary {
   lat: number;
@@ -57,12 +60,32 @@ function isScenarioMessage(type: string): boolean {
   return type === 'telemetry.location.batch' || type === 'pricing.surge' || type === 'route.update';
 }
 
+function nextStatus(current: TripStatus): TripStatus | null {
+  if (current === 'EN_ROUTE_TO_PICKUP') return 'ARRIVED_AT_PICKUP';
+  if (current === 'ARRIVED_AT_PICKUP') return 'ON_TRIP';
+  if (current === 'ON_TRIP') return 'COMPLETED';
+  return null;
+}
+
+function statusLabel(status: TripStatus): string {
+  return status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function transitionActionLabel(status: TripStatus): string | null {
+  if (status === 'EN_ROUTE_TO_PICKUP') return 'Mark arrived at pickup';
+  if (status === 'ARRIVED_AT_PICKUP') return 'Start trip';
+  if (status === 'ON_TRIP') return 'Complete trip';
+  return null;
+}
+
 function App() {
   const [connection, setConnection] = useState<GatewayConnectionState>('offline');
   const [error, setError] = useState('');
   const [drive, setDrive] = useState<DriveSummary>(emptyDrive);
   const [isReplaying, setIsReplaying] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [tripStatus, setTripStatus] = useState<TripStatus>('EN_ROUTE_TO_PICKUP');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [syncSummary, setSyncSummary] = useState('No status has been synced yet');
   const scenarioFrameCount = useRef(0);
   const clientRef = useRef<GatewayClient | null>(null);
@@ -108,6 +131,11 @@ function App() {
       onError: setError,
     });
     clientRef.current = client;
+    void client.getTripStatus(DEMO_TRIP_ID).then(setTripStatus);
+    void client.getPendingSyncCount().then(count => {
+      setPendingSyncCount(count);
+      if (count > 0) setSyncSummary(`${count} trip update${count === 1 ? '' : 's'} waiting to sync`);
+    });
     return () => {
       client.disconnect();
       clientRef.current = null;
@@ -140,21 +168,39 @@ function App() {
     setIsReplaying(false);
   };
 
-  const syncDemoStatus = async () => {
+  const syncPending = async () => {
     setError('');
     setIsSyncing(true);
     try {
-      const receipt = await clientRef.current?.syncDemoStatus();
-      if (receipt) {
-        const pending = await clientRef.current?.getPendingSyncCount() ?? 0;
-        setSyncSummary(`${receipt.accepted.length} accepted · ${pending} waiting to sync · server version ${receipt.serverVersion}`);
-      }
+      const receipt = await clientRef.current?.syncPendingOperations();
+      const pending = await clientRef.current?.getPendingSyncCount() ?? 0;
+      setPendingSyncCount(pending);
+      if (receipt) setSyncSummary(`${receipt.accepted.length} accepted · ${pending} waiting to sync · server version ${receipt.serverVersion}`);
     } catch (reason) {
       const pending = await clientRef.current?.getPendingSyncCount() ?? 0;
+      setPendingSyncCount(pending);
       if (pending > 0) setSyncSummary(`${pending} operation saved on this device; it will retry next time you sync`);
       setError(reason instanceof Error ? reason.message : 'Could not sync trip status');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const updateTripStatus = async (next: TripStatus) => {
+    setError('');
+    try {
+      const updated = await clientRef.current?.transitionTripStatus(DEMO_TRIP_ID, next);
+      if (!updated) {
+        setError(`That trip status change is not allowed from ${statusLabel(tripStatus)}.`);
+        return;
+      }
+      setTripStatus(updated);
+      const pending = await clientRef.current?.getPendingSyncCount() ?? 0;
+      setPendingSyncCount(pending);
+      if (connection === 'live') await syncPending();
+      else setSyncSummary(`${pending} trip update${pending === 1 ? '' : 's'} saved on this device; connect to sync`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not save trip status');
     }
   };
 
@@ -190,6 +236,43 @@ function App() {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Active trip</Text>
+            <Text style={styles.tripId}>{DEMO_TRIP_ID}</Text>
+            <View style={styles.tripStatusRow}>
+              <Text style={styles.tripStatus}>{statusLabel(tripStatus)}</Text>
+              <Text style={styles.tripOrdinal}>Step {TRIP_STATUS_ORDINAL[tripStatus]}</Text>
+            </View>
+            {transitionActionLabel(tripStatus) ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSyncing}
+                onPress={() => updateTripStatus(nextStatus(tripStatus)!)}
+                style={[styles.button, styles.primaryButton, isSyncing && styles.disabledButton]}>
+                <Text style={styles.buttonText}>{transitionActionLabel(tripStatus)}</Text>
+              </Pressable>
+            ) : <Text style={styles.muted}>This trip has ended.</Text>}
+            {tripStatus !== 'COMPLETED' && tripStatus !== 'CANCELLED' ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSyncing}
+                onPress={() => updateTripStatus('CANCELLED')}
+                style={[styles.button, styles.dangerButton, styles.syncButton, isSyncing && styles.disabledButton]}>
+                <Text style={styles.dangerButtonText}>Cancel trip</Text>
+              </Pressable>
+            ) : null}
+            {pendingSyncCount > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={!connected || isSyncing}
+                onPress={syncPending}
+                style={[styles.button, styles.secondaryButton, styles.syncButton, (!connected || isSyncing) && styles.disabledButton]}>
+                <Text style={styles.secondaryButtonText}>{isSyncing ? 'Syncing…' : `Retry sync (${pendingSyncCount})`}</Text>
+              </Pressable>
+            ) : null}
+            <Text style={styles.muted}>{syncSummary}</Text>
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Demo drive</Text>
             <Text style={styles.description}>Replay a synthetic Bengaluru trip through the live connection.</Text>
             <Pressable
@@ -199,14 +282,6 @@ function App() {
               style={[styles.button, styles.primaryButton, (!connected || isReplaying) && styles.disabledButton]}>
               <Text style={styles.buttonText}>{isReplaying ? 'Drive is playing…' : 'Start demo drive'}</Text>
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!connected || isSyncing}
-              onPress={syncDemoStatus}
-              style={[styles.button, styles.secondaryButton, styles.syncButton, (!connected || isSyncing) && styles.disabledButton]}>
-              <Text style={styles.secondaryButtonText}>{isSyncing ? 'Syncing…' : 'Sync demo status'}</Text>
-            </Pressable>
-            <Text style={styles.muted}>{syncSummary}</Text>
           </View>
 
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -262,6 +337,12 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: '#146b4d' },
   secondaryButton: { backgroundColor: '#e6f1eb' },
   syncButton: { marginTop: 10 },
+  dangerButton: { backgroundColor: '#fff0f0' },
+  dangerButtonText: { color: '#a83232', fontSize: 15, fontWeight: '700' },
+  tripId: { color: '#728078', fontSize: 12, marginTop: -7, marginBottom: 10 },
+  tripStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  tripStatus: { color: '#146b4d', fontSize: 18, fontWeight: '700' },
+  tripOrdinal: { color: '#728078', fontSize: 12 },
   disabledButton: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   secondaryButtonText: { color: '#146b4d' },

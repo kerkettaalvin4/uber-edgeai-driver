@@ -1,5 +1,6 @@
 import { GATEWAY_HTTP_URL, GATEWAY_WS_URL } from '../config/gateway';
 import { SyncOutbox, type SyncReceipt } from './SyncOutbox';
+import type { TripStatus } from '../domain/entities/TripStatus';
 
 export type GatewayConnectionState = 'offline' | 'connecting' | 'live';
 
@@ -173,12 +174,22 @@ export class GatewayClient {
     return response.json() as Promise<ScenarioReplayReceipt>;
   }
 
-  async syncDemoStatus(tripId = 'trip-mobile-demo-001'): Promise<SyncReceipt> {
+  getTripStatus(tripId: string): Promise<TripStatus> {
+    return this.syncOutbox.getTripStatus(tripId);
+  }
+
+  transitionTripStatus(tripId: string, nextStatus: TripStatus): Promise<TripStatus | null> {
+    return this.syncOutbox.transitionTripStatus(tripId, nextStatus);
+  }
+
+  async syncPendingOperations(): Promise<SyncReceipt> {
     if (!this.token || this.socket?.readyState !== (globalThis.WebSocket as unknown as MobileWebSocketConstructor).OPEN) {
       throw new Error('Connect to the gateway before syncing trip status');
     }
-    await this.syncOutbox.enqueueTripStatus(tripId, 'ARRIVED_AT_PICKUP', 3);
     const syncRequest = await this.syncOutbox.createRequest();
+    if (syncRequest.ops.length === 0) {
+      return { accepted: [], rejected: [], serverVersion: syncRequest.sinceServerVersion };
+    }
     const response = await fetch(`${GATEWAY_HTTP_URL}/v1/sync`, {
       method: 'POST',
       headers: {

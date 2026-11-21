@@ -9,7 +9,9 @@ class MemoryStorage implements KeyValueStorage {
 test('persists queued operations and clock metadata across instances', async () => {
   const storage = new MemoryStorage();
   const first = new SyncOutbox(storage, () => 1_800_000_000_000, jest.fn());
-  const operation = await first.enqueueTripStatus('trip-1', 'ARRIVED_AT_PICKUP', 3);
+  const status = await first.transitionTripStatus('trip-1', 'ARRIVED_AT_PICKUP');
+  expect(status).toBe('ARRIVED_AT_PICKUP');
+  const operation = (await first.createRequest()).ops[0];
 
   const restarted = new SyncOutbox(storage, () => 1_800_000_000_001, jest.fn());
   const request = await restarted.createRequest();
@@ -22,7 +24,8 @@ test('removes acknowledged operations and warns when a received clock is far ahe
   const storage = new MemoryStorage();
   const onClockSkew = jest.fn();
   const outbox = new SyncOutbox(storage, () => 1_800_000_000_000, onClockSkew);
-  const operation = await outbox.enqueueTripStatus('trip-1', 'ARRIVED_AT_PICKUP', 3);
+  await outbox.transitionTripStatus('trip-1', 'ARRIVED_AT_PICKUP');
+  const operation = (await outbox.createRequest()).ops[0];
 
   await outbox.applyReceipt({
     accepted: [operation.opId],
@@ -35,4 +38,18 @@ test('removes acknowledged operations and warns when a received clock is far ahe
   expect(await outbox.getPendingCount()).toBe(0);
   expect(onClockSkew).toHaveBeenCalledWith(61_000);
   expect((await outbox.createRequest()).sinceServerVersion).toBe(1);
+});
+
+test('applies lifecycle rules locally and merges remote status without going backward', async () => {
+  const outbox = new SyncOutbox(new MemoryStorage(), () => 1_800_000_000_000, jest.fn());
+  expect(await outbox.transitionTripStatus('trip-1', 'ON_TRIP')).toBeNull();
+  expect(await outbox.getTripStatus('trip-1')).toBe('EN_ROUTE_TO_PICKUP');
+
+  await outbox.transitionTripStatus('trip-1', 'ARRIVED_AT_PICKUP');
+  await outbox.applyReceipt({
+    accepted: [], rejected: [], serverVersion: 2,
+    mergedState: { trip: { 'trip-1': { status: { status: 'COMPLETED' } } } },
+  });
+  expect(await outbox.getTripStatus('trip-1')).toBe('COMPLETED');
+  expect(await outbox.transitionTripStatus('trip-1', 'ON_TRIP')).toBeNull();
 });

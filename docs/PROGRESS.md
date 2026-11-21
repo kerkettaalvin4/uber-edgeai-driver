@@ -12,15 +12,17 @@
 - Added a development-only synthetic Bengaluru replay with 11 location fixes, five H3 resolution-8 surge deltas, and a route update.
 - Added a React Native gateway demo screen that obtains a development token, resumes the WebSocket, replays the drive, and submits a demo trip-status sync operation.
 - Added an AsyncStorage-backed sync outbox. UUIDv7 operations, HLC, vector clock, and last server version persist across app restarts; failed requests remain queued. Incoming clocks trigger a warning when they are more than 60 seconds ahead.
+- Added the React Native active-trip workflow. Drivers can advance or cancel through the domain lifecycle rules; local state persists, queued operations sync to the gateway, and merged remote state is reconciled without moving the trip backward.
 
 ## Current feature
 
-- React Native gateway and initial offline-sync integration: development auth, WebSocket resume, scenario playback, and a persisted `/v1/sync` outbox are wired into the app shell.
+- React Native trip workflow: persisted lifecycle actions, outbox sync, and server-state reconciliation are connected to the gateway demo.
 
 ## Pending
 
 - Verify gateway integration in the Android emulator or on a device.
-- Replace the demo trip-status operation with real trip lifecycle actions and reconcile server merged state into local state.
+- Verify gateway integration and the trip workflow in the Android emulator or on a device.
+- Replace the fixed demo trip with real assigned-trip data and trip details.
 - Set up the development environment with Android SDK/JDK and Docker.
 - Verify starter repository and `/ml` assets; none are in the current workspace.
 
@@ -30,7 +32,7 @@
 - Previous checkpoint: 2 Jest suites, 6 tests; lint and typecheck passed; Android JS bundle generated.
 - `npm test -- --runInBand` — 3 suites, 14 tests passed, including 8 HLC cases.
 - `npm test -- --runInBand` — 4 suites, 15 tests passed after adding the gateway client test.
-- `npm test -- --runInBand` — 5 suites, 17 tests passed, including persisted outbox and HLC skew-warning coverage.
+- `npm test -- --runInBand` — 5 suites, 18 tests passed, including persisted outbox, lifecycle enforcement, server merge, and HLC skew-warning coverage.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
 - `cd backend && npm test` — 13 gateway, sync, CRDT, and scenario tests passed.
@@ -51,6 +53,8 @@
 - Android and iOS native builds have not been run.
 
 ## GitHub commit references
+
+- `26d4ca8` — `feat(sync): persist mobile outbox and hybrid clock`.
 
 - `f91d946` — `feat(domain): implement trip lifecycle state machine`.
 - `0926e77` — `feat(app): scaffold React Native foundation`.

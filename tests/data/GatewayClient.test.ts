@@ -72,7 +72,8 @@ test('gets a development token, resumes the socket, and starts the scenario', as
     await connection;
 
     await expect(client.replayScenario('trip-test')).resolves.toMatchObject({ frameCount: 17 });
-    await expect(client.syncDemoStatus('trip-test')).resolves.toMatchObject({ serverVersion: 1 });
+    await expect(client.transitionTripStatus('trip-test', 'ARRIVED_AT_PICKUP')).resolves.toBe('ARRIVED_AT_PICKUP');
+    await expect(client.syncPendingOperations()).resolves.toMatchObject({ serverVersion: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ tripId: 'trip-test', maxMessagesPerSecond: 10 });
     const syncRequest = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
