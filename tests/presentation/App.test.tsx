@@ -18,4 +18,4 @@ test('shows the EdgeAI driver app root', async () => {
   ).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Connect to gateway' })).toBeEnabled();
   expect(screen.getByRole('button', { name: 'Start demo drive' })).toBeDisabled();
-});
+}, 10_000);

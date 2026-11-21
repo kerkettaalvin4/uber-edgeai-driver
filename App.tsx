@@ -62,6 +62,7 @@ function App() {
   const [error, setError] = useState('');
   const [drive, setDrive] = useState<DriveSummary>(emptyDrive);
   const [isReplaying, setIsReplaying] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState('No status has been synced yet');
   const scenarioFrameCount = useRef(0);
   const clientRef = useRef<GatewayClient | null>(null);
@@ -141,13 +142,19 @@ function App() {
 
   const syncDemoStatus = async () => {
     setError('');
+    setIsSyncing(true);
     try {
       const receipt = await clientRef.current?.syncDemoStatus();
       if (receipt) {
-        setSyncSummary(`${receipt.accepted.length} operation accepted · server version ${receipt.serverVersion}`);
+        const pending = await clientRef.current?.getPendingSyncCount() ?? 0;
+        setSyncSummary(`${receipt.accepted.length} accepted · ${pending} waiting to sync · server version ${receipt.serverVersion}`);
       }
     } catch (reason) {
+      const pending = await clientRef.current?.getPendingSyncCount() ?? 0;
+      if (pending > 0) setSyncSummary(`${pending} operation saved on this device; it will retry next time you sync`);
       setError(reason instanceof Error ? reason.message : 'Could not sync trip status');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -194,10 +201,10 @@ function App() {
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              disabled={!connected}
+              disabled={!connected || isSyncing}
               onPress={syncDemoStatus}
-              style={[styles.button, styles.secondaryButton, styles.syncButton, !connected && styles.disabledButton]}>
-              <Text style={styles.secondaryButtonText}>Sync demo status</Text>
+              style={[styles.button, styles.secondaryButton, styles.syncButton, (!connected || isSyncing) && styles.disabledButton]}>
+              <Text style={styles.secondaryButtonText}>{isSyncing ? 'Syncing…' : 'Sync demo status'}</Text>
             </Pressable>
             <Text style={styles.muted}>{syncSummary}</Text>
           </View>

@@ -1,4 +1,5 @@
 import { GATEWAY_HTTP_URL, GATEWAY_WS_URL } from '../config/gateway';
+import { SyncOutbox, type SyncReceipt } from './SyncOutbox';
 
 export type GatewayConnectionState = 'offline' | 'connecting' | 'live';
 
@@ -17,12 +18,6 @@ export interface ScenarioReplayReceipt {
   tripId: string;
   frameCount: number;
   maxMessagesPerSecond: number;
-}
-
-export interface SyncReceipt {
-  accepted: string[];
-  rejected: Array<{ opId: string; reason: string }>;
-  serverVersion: number;
 }
 
 interface GatewayClientOptions {
@@ -68,10 +63,11 @@ export class GatewayClient {
   private token: string | null = null;
   private lastServerSeq = 0;
   private clientSeq = 0;
-  private syncCounter = 0;
-  private serverVersion = 0;
 
-  constructor(private readonly options: GatewayClientOptions) {}
+  constructor(
+    private readonly options: GatewayClientOptions,
+    private readonly syncOutbox = new SyncOutbox(),
+  ) {}
 
   async connect(): Promise<void> {
     const WebSocketConstructor = globalThis.WebSocket as unknown as MobileWebSocketConstructor;
@@ -181,37 +177,27 @@ export class GatewayClient {
     if (!this.token || this.socket?.readyState !== (globalThis.WebSocket as unknown as MobileWebSocketConstructor).OPEN) {
       throw new Error('Connect to the gateway before syncing trip status');
     }
-    this.syncCounter += 1;
-    const now = Date.now();
-    const vclock = { mobile_demo: this.syncCounter, server: this.serverVersion };
+    await this.syncOutbox.enqueueTripStatus(tripId, 'ARRIVED_AT_PICKUP', 3);
+    const syncRequest = await this.syncOutbox.createRequest();
     const response = await fetch(`${GATEWAY_HTTP_URL}/v1/sync`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        sinceServerVersion: this.serverVersion,
-        clientClock: vclock,
-        ops: [{
-          opId: createUuidV7(now),
-          entity: 'trip',
-          entityId: tripId,
-          field: 'status',
-          crdt: 'max_ordinal',
-          value: { status: 'ARRIVED_AT_PICKUP', ordinal: 3 },
-          hlc: `${now}:0001:mobile_demo`,
-          vclock,
-        }],
-      }),
+      body: JSON.stringify(syncRequest),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({})) as { error?: string };
       throw new Error(body.error ?? `Could not sync trip status (${response.status})`);
     }
     const receipt = await response.json() as SyncReceipt;
-    this.serverVersion = receipt.serverVersion;
+    await this.syncOutbox.applyReceipt(receipt);
     return receipt;
+  }
+
+  getPendingSyncCount(): Promise<number> {
+    return this.syncOutbox.getPendingCount();
   }
 
   disconnect(): void {
@@ -237,11 +223,4 @@ export class GatewayClient {
       payload,
     }));
   }
-}
-
-function createUuidV7(timestamp: number): string {
-  const time = timestamp.toString(16).padStart(12, '0').slice(-12);
-  const random = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-  const variant = ['8', '9', 'a', 'b'][Math.floor(Math.random() * 4)];
-  return `${time.slice(0, 8)}-${time.slice(8)}-7${random().slice(1)}-${variant}${random().slice(1)}-${random()}${random()}${random()}`;
 }

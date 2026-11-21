@@ -11,6 +11,7 @@
 - Added an authenticated `/v1/sync` endpoint with UUIDv7 idempotency, PostgreSQL-backed state, and max-ordinal, HLC last-writer-wins, and observed-remove set merges.
 - Added a development-only synthetic Bengaluru route replay that emits location batches, H3 resolution-8 surge deltas, and route updates to resumed WebSocket clients.
 - Connected the React Native demo screen to development token issuance, WebSocket resume, scenario replay, and offline sync status submission.
+- Added an AsyncStorage-backed sync outbox with persisted HLC/vclock/server-version metadata, retry-on-next-sync behavior, and a warning for remote clocks more than 60 seconds ahead.
 
 
 

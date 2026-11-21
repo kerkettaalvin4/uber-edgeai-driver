@@ -4,7 +4,7 @@ React Native driver-side client for the EdgeAI logistics project. The app uses t
 
 ## Current status
 
-The React Native 0.88 application shell and native Android/iOS projects are scaffolded. The current screen is only the app root; it does not yet implement online availability, tracking, maps, or synchronization.
+The React Native 0.88 application shell connects to the development gateway, can replay a synthetic drive, and queues demo trip-status operations in AsyncStorage. The persisted HLC and outbox are an initial sync workflow; driver availability, real location tracking, and maps are still pending.
 
 ## Requirements
 
@@ -32,12 +32,12 @@ To work on just the service without Docker, run `npm install` in `backend`, star
 
 ## Connect the Android emulator to the gateway
 
-Start the stack with `docker compose up --build`, then start Metro with `npm start` and launch the app in another terminal with `npm run android`. The demo screen uses `http://10.0.2.2:3001` for the Android emulator. Tap **Connect to gateway**, then **Start demo drive** to see location, surge, and route messages; **Sync demo status** sends one UUIDv7 status operation to `/v1/sync`. For an iOS simulator, the app uses `localhost`; for a physical phone, change the base URL in `src/config/gateway.ts` to your computer's LAN IP.
+Start the stack with `docker compose up --build`, then start Metro with `npm start` and launch the app in another terminal with `npm run android`. The demo screen uses `http://10.0.2.2:3001` for the Android emulator. Tap **Connect to gateway**, then **Start demo drive** to see location, surge, and route messages. **Sync demo status** first saves a UUIDv7 operation and HLC/vclock metadata to AsyncStorage, then sends the pending outbox to `/v1/sync`; if the request fails, the operation remains queued for the next sync attempt. A received HLC more than 60 seconds ahead of the device clock triggers a warning. For an iOS simulator, the app uses `localhost`; for a physical phone, change the base URL in `src/config/gateway.ts` to your computer's LAN IP. Rebuild the native app after installing AsyncStorage.
 
 ## Architecture
 
 - `src/domain` holds pure TypeScript business rules.
-- `src/data` will hold local persistence and remote/native adapters.
+- `src/data` holds local sync persistence and remote/native adapters.
 - `src/presentation` will hold the React Native screens and UI state.
 - `backend` will hold the telemetry gateway.
 - `native` will hold Codegen specifications and native module implementations.
