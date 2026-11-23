@@ -54,6 +54,7 @@
 
 ## GitHub commit references
 
+- `8ee0487` — `feat(gateway): add mobile heartbeat and reconnect`.
 - `26d4ca8` — `feat(sync): persist mobile outbox and hybrid clock`.
 
 - `f91d946` — `feat(domain): implement trip lifecycle state machine`.
