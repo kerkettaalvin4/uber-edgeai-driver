@@ -13,14 +13,14 @@
 - Added a React Native gateway demo screen that obtains a development token, resumes the WebSocket, replays the drive, and submits a demo trip-status sync operation.
 - Added an AsyncStorage-backed sync outbox. UUIDv7 operations, HLC, vector clock, and last server version persist across app restarts; failed requests remain queued. Incoming clocks trigger a warning when they are more than 60 seconds ahead.
 - Added the React Native active-trip workflow. Drivers can advance or cancel through the domain lifecycle rules; local state persists, queued operations sync to the gateway, and merged remote state is reconciled without moving the trip backward.
+- Added mobile WebSocket heartbeat and reconnect handling: 15-second pings, 10-second pong timeout, full-jitter exponential retry from 500 ms up to 30 seconds, retry reset after 60 seconds stable, and resume from the latest received server sequence.
 
 ## Current feature
 
-- React Native trip workflow: persisted lifecycle actions, outbox sync, and server-state reconciliation are connected to the gateway demo.
+- React Native gateway reliability: heartbeat, missed-pong recovery, exponential reconnect, and session resume are implemented and covered by client tests.
 
 ## Pending
 
-- Verify gateway integration in the Android emulator or on a device.
 - Verify gateway integration and the trip workflow in the Android emulator or on a device.
 - Replace the fixed demo trip with real assigned-trip data and trip details.
 - Set up the development environment with Android SDK/JDK and Docker.
@@ -32,7 +32,7 @@
 - Previous checkpoint: 2 Jest suites, 6 tests; lint and typecheck passed; Android JS bundle generated.
 - `npm test -- --runInBand` — 3 suites, 14 tests passed, including 8 HLC cases.
 - `npm test -- --runInBand` — 4 suites, 15 tests passed after adding the gateway client test.
-- `npm test -- --runInBand` — 5 suites, 18 tests passed, including persisted outbox, lifecycle enforcement, server merge, and HLC skew-warning coverage.
+- `npm test -- --runInBand` — 5 suites, 20 tests passed, including heartbeat timeout, reconnect/resume, persisted outbox, lifecycle enforcement, server merge, and HLC skew-warning coverage.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
 - `cd backend && npm test` — 13 gateway, sync, CRDT, and scenario tests passed.
@@ -44,7 +44,7 @@
 
 ## Known bugs and limitations
 
-- Driver workflows are not implemented yet; the app root is only the native project shell.
+- Native foreground/background location tracking and assigned-trip loading are not implemented yet.
 - Mobile HLC/outbox persistence uses AsyncStorage; production secure storage, server merged-state reconciliation, and cross-device conflict UI are not implemented yet.
 - Docker Compose was added but not executed because Docker is unavailable in this environment.
 - PostgreSQL sync integration was not executed because Docker is unavailable; tests use the in-memory adapter.
@@ -65,8 +65,8 @@
 
 ## Schedule
 
-- Day 4 of 30-day plan: in progress.
-- Days remaining: 26.
+- Day 7 of 30-day plan: in progress.
+- Days remaining: 23.
 
 
 

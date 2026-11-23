@@ -2,7 +2,13 @@ import { GATEWAY_HTTP_URL, GATEWAY_WS_URL } from '../config/gateway';
 import { SyncOutbox, type SyncReceipt } from './SyncOutbox';
 import type { TripStatus } from '../domain/entities/TripStatus';
 
-export type GatewayConnectionState = 'offline' | 'connecting' | 'live';
+export type GatewayConnectionState = 'offline' | 'connecting' | 'live' | 'reconnecting';
+
+const HEARTBEAT_INTERVAL_MS = 15_000;
+const PONG_TIMEOUT_MS = 10_000;
+const INITIAL_RETRY_MS = 500;
+const MAX_RETRY_MS = 30_000;
+const STABLE_CONNECTION_MS = 60_000;
 
 export interface GatewayFrame {
   v: 1;
@@ -64,6 +70,14 @@ export class GatewayClient {
   private token: string | null = null;
   private lastServerSeq = 0;
   private clientSeq = 0;
+  private wantsConnection = false;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
+  private awaitingPong = false;
 
   constructor(
     private readonly options: GatewayClientOptions,
@@ -72,86 +86,159 @@ export class GatewayClient {
 
   async connect(): Promise<void> {
     const WebSocketConstructor = globalThis.WebSocket as unknown as MobileWebSocketConstructor;
+    this.wantsConnection = true;
     if (this.socket?.readyState === WebSocketConstructor.OPEN) return;
-    if (this.socket?.readyState === WebSocketConstructor.CONNECTING) throw new Error('Gateway connection is already starting');
-
+    if (this.socket?.readyState === WebSocketConstructor.CONNECTING) return;
+    this.clearReconnectTimer();
     this.options.onError('');
     this.options.onStateChange('connecting');
 
     try {
-      const tokenResponse = await fetch(`${GATEWAY_HTTP_URL}/v1/dev-token`, { method: 'POST' });
-      if (!tokenResponse.ok) throw new Error(`Could not get a development token (${tokenResponse.status})`);
-      const tokenBody = await tokenResponse.json() as TokenResponse;
-      this.token = tokenBody.token;
-
-      await new Promise<void>((resolve, reject) => {
-        const socket = new WebSocketConstructor(GATEWAY_WS_URL + '/v1/stream', null, {
-          headers: { Authorization: `Bearer ${this.token}` },
-        });
-        this.socket = socket;
-        let settled = false;
-        const timeout = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          socket.close();
-          reject(new Error('Gateway connection timed out'));
-        }, 10_000);
-
-        socket.onopen = () => {
-          this.send('session.resume', {
-            lastServerSeq: this.lastServerSeq,
-            lastClientSeqAcked: 0,
-          });
-          this.send('system.ping', { clientTime: Date.now() });
-        };
-
-        socket.onmessage = event => {
-          try {
-            const frame: unknown = JSON.parse(String(event.data));
-            if (!isGatewayFrame(frame)) throw new Error('Gateway sent an invalid message envelope');
-            if (frame.seq <= this.lastServerSeq) return;
-            this.lastServerSeq = frame.seq;
-            this.options.onFrame(frame);
-            if (frame.type === 'system.pong' && !settled) {
-              settled = true;
-              clearTimeout(timeout);
-              this.options.onStateChange('live');
-              resolve();
-            }
-          } catch (error) {
-            this.options.onError(error instanceof Error ? error.message : 'Could not read a gateway message');
-          }
-        };
-
-        socket.onerror = () => {
-          this.options.onStateChange('offline');
-          const error = new Error('Could not connect to the gateway. Check that it is running and the app uses the correct host address.');
-          this.options.onError(error.message);
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            reject(error);
-          }
-        };
-
-        socket.onclose = () => {
-          if (this.socket === socket) {
-            this.socket = null;
-            this.options.onStateChange('offline');
-          }
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            reject(new Error('Gateway closed the connection before it opened'));
-          }
-        };
-      });
+      await this.openSocket(false);
     } catch (error) {
-      this.options.onStateChange('offline');
+      if (!this.wantsConnection) return;
       const message = error instanceof Error ? error.message : 'Could not connect to the gateway';
       this.options.onError(message);
+      this.scheduleReconnect();
       throw error;
     }
+  }
+
+  private async openSocket(isRetry: boolean): Promise<void> {
+    const WebSocketConstructor = globalThis.WebSocket as unknown as MobileWebSocketConstructor;
+    if (isRetry) this.options.onStateChange('reconnecting');
+    const tokenResponse = await fetch(`${GATEWAY_HTTP_URL}/v1/dev-token`, { method: 'POST' });
+    if (!tokenResponse.ok) throw new Error(`Could not get a development token (${tokenResponse.status})`);
+    const tokenBody = await tokenResponse.json() as TokenResponse;
+    if (!this.wantsConnection) return;
+    this.token = tokenBody.token;
+
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocketConstructor(GATEWAY_WS_URL + '/v1/stream', null, {
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      this.socket = socket;
+      let handshakeSettled = false;
+      const finishHandshake = (error?: Error) => {
+        if (handshakeSettled) return;
+        handshakeSettled = true;
+        if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+        this.handshakeTimer = null;
+        if (error) reject(error);
+        else resolve();
+      };
+
+      this.handshakeTimer = setTimeout(() => {
+        socket.close(4000, 'gateway handshake timed out');
+        finishHandshake(new Error('Gateway connection timed out'));
+      }, PONG_TIMEOUT_MS);
+
+      socket.onopen = () => {
+        this.send('session.resume', {
+          lastServerSeq: this.lastServerSeq,
+          lastClientSeqAcked: 0,
+        });
+        this.sendHeartbeatPing(socket);
+      };
+
+      socket.onmessage = event => {
+        try {
+          const frame: unknown = JSON.parse(String(event.data));
+          if (!isGatewayFrame(frame)) throw new Error('Gateway sent an invalid message envelope');
+          if (frame.seq <= this.lastServerSeq) return;
+          this.lastServerSeq = frame.seq;
+          this.options.onFrame(frame);
+          if (frame.type === 'system.pong') {
+            this.clearPongTimer();
+            this.awaitingPong = false;
+            if (!handshakeSettled) {
+              finishHandshake();
+              this.options.onError('');
+              this.options.onStateChange('live');
+              this.startHeartbeat(socket);
+              this.startStableTimer();
+            }
+          }
+        } catch (error) {
+          this.options.onError(error instanceof Error ? error.message : 'Could not read a gateway message');
+        }
+      };
+
+      socket.onerror = () => {
+        this.options.onError('Could not connect to the gateway. It will retry while Online.');
+        socket.close();
+      };
+
+      socket.onclose = () => {
+        const wasCurrentSocket = this.socket === socket;
+        if (wasCurrentSocket) this.socket = null;
+        this.clearTransportTimers();
+        finishHandshake(new Error('Gateway closed the connection before it opened'));
+        if (wasCurrentSocket && this.wantsConnection) this.scheduleReconnect();
+        else if (wasCurrentSocket) this.options.onStateChange('offline');
+      };
+    });
+  }
+
+  private startHeartbeat(socket: MobileWebSocket): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      const WebSocketConstructor = globalThis.WebSocket as unknown as MobileWebSocketConstructor;
+      if (this.socket !== socket || socket.readyState !== WebSocketConstructor.OPEN || this.awaitingPong) return;
+      this.sendHeartbeatPing(socket);
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  private sendHeartbeatPing(socket: MobileWebSocket): void {
+    this.awaitingPong = true;
+    this.send('system.ping', { clientTime: Date.now() });
+    this.clearPongTimer();
+    this.pongTimer = setTimeout(() => {
+      this.options.onError('Gateway heartbeat timed out. Reconnecting…');
+      socket.close(4000, 'heartbeat timeout');
+    }, PONG_TIMEOUT_MS);
+  }
+
+  private startStableTimer(): void {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = setTimeout(() => {
+      this.reconnectAttempts = 0;
+      this.stableTimer = null;
+    }, STABLE_CONNECTION_MS);
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.wantsConnection || this.reconnectTimer) return;
+    const delayCap = Math.min(MAX_RETRY_MS, INITIAL_RETRY_MS * (2 ** this.reconnectAttempts));
+    this.reconnectAttempts += 1;
+    const delay = Math.floor(Math.random() * delayCap);
+    this.options.onStateChange('reconnecting');
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.openSocket(true).catch(error => {
+        this.options.onError(error instanceof Error ? error.message : 'Gateway reconnect failed');
+        this.scheduleReconnect();
+      });
+    }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private clearPongTimer(): void {
+    if (this.pongTimer) clearTimeout(this.pongTimer);
+    this.pongTimer = null;
+  }
+
+  private clearTransportTimers(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.heartbeatTimer = null;
+    this.stableTimer = null;
+    this.clearPongTimer();
+    this.awaitingPong = false;
   }
 
   async replayScenario(tripId = 'trip-mobile-demo-001'): Promise<ScenarioReplayReceipt> {
@@ -212,6 +299,11 @@ export class GatewayClient {
   }
 
   disconnect(): void {
+    this.wantsConnection = false;
+    this.clearReconnectTimer();
+    this.clearTransportTimers();
+    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
     const socket = this.socket;
     this.socket = null;
     this.token = null;

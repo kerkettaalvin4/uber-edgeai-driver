@@ -13,6 +13,7 @@ class FakeWebSocket {
   static CLOSING = 2;
   static CLOSED = 3;
   static instance: FakeWebSocket;
+  static instances: FakeWebSocket[] = [];
 
   readyState = FakeWebSocket.CONNECTING;
   onopen: (() => void) | null = null;
@@ -23,6 +24,7 @@ class FakeWebSocket {
 
   constructor(_url: string, _protocols?: string | string[] | null, _options?: unknown) {
     FakeWebSocket.instance = this;
+    FakeWebSocket.instances.push(this);
   }
 
   send(message: string) {
@@ -85,6 +87,89 @@ test('gets a development token, resumes the socket, and starts the scenario', as
   } finally {
     client.disconnect();
     fetchMock.mockRestore();
+    Object.defineProperty(global, 'WebSocket', { configurable: true, value: originalWebSocket });
+  }
+});
+
+test('sends periodic heartbeats and resumes after an unexpected disconnect', async () => {
+  jest.useFakeTimers();
+  const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+  const fetchMock = jest.spyOn(global, 'fetch');
+  const originalWebSocket = global.WebSocket;
+  Object.defineProperty(global, 'WebSocket', { configurable: true, value: FakeWebSocket });
+  FakeWebSocket.instances = [];
+  fetchMock
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ token: 'first-token' }) } as Response)
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ token: 'second-token' }) } as Response);
+  const states: string[] = [];
+  const client = new GatewayClient({ onStateChange: state => states.push(state), onFrame: jest.fn(), onError: jest.fn() }, new SyncOutbox(new MemoryStorage(), Date.now, jest.fn()));
+
+  try {
+    const connecting = client.connect();
+    await Promise.resolve();
+    await Promise.resolve();
+    const firstSocket = FakeWebSocket.instances[0];
+    firstSocket.open();
+    firstSocket.receive('system.pong', 1);
+    await connecting;
+
+    jest.advanceTimersByTime(15_000);
+    expect(firstSocket.sent.map(message => JSON.parse(message).type)).toEqual(['session.resume', 'system.ping', 'system.ping']);
+    firstSocket.receive('system.pong', 2);
+    firstSocket.close();
+    expect(states).toContain('reconnecting');
+
+    await jest.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    const resumedSocket = FakeWebSocket.instances[1];
+    resumedSocket.open();
+    const resumeFrame = JSON.parse(resumedSocket.sent[0]);
+    expect(resumeFrame.payload.lastServerSeq).toBe(2);
+    resumedSocket.receive('system.pong', 3);
+    await Promise.resolve();
+    expect(states.at(-1)).toBe('live');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    client.disconnect();
+    fetchMock.mockRestore();
+    random.mockRestore();
+    jest.useRealTimers();
+    Object.defineProperty(global, 'WebSocket', { configurable: true, value: originalWebSocket });
+  }
+});
+
+test('closes an unhealthy socket when a heartbeat pong is missing', async () => {
+  jest.useFakeTimers();
+  const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+  const fetchMock = jest.spyOn(global, 'fetch');
+  const originalWebSocket = global.WebSocket;
+  Object.defineProperty(global, 'WebSocket', { configurable: true, value: FakeWebSocket });
+  FakeWebSocket.instances = [];
+  fetchMock
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ token: 'first-token' }) } as Response)
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ token: 'retry-token' }) } as Response);
+  const states: string[] = [];
+  const client = new GatewayClient({ onStateChange: state => states.push(state), onFrame: jest.fn(), onError: jest.fn() }, new SyncOutbox(new MemoryStorage(), Date.now, jest.fn()));
+
+  try {
+    const connecting = client.connect();
+    await Promise.resolve();
+    await Promise.resolve();
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.receive('system.pong', 1);
+    await connecting;
+
+    jest.advanceTimersByTime(15_000);
+    jest.advanceTimersByTime(10_000);
+    expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(states).toContain('reconnecting');
+  } finally {
+    client.disconnect();
+    fetchMock.mockRestore();
+    random.mockRestore();
+    jest.useRealTimers();
     Object.defineProperty(global, 'WebSocket', { configurable: true, value: originalWebSocket });
   }
 });

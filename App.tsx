@@ -131,11 +131,11 @@ function App() {
       onError: setError,
     });
     clientRef.current = client;
-    void client.getTripStatus(DEMO_TRIP_ID).then(setTripStatus);
-    void client.getPendingSyncCount().then(count => {
+    client.getTripStatus(DEMO_TRIP_ID).then(setTripStatus).catch(() => undefined);
+    client.getPendingSyncCount().then(count => {
       setPendingSyncCount(count);
       if (count > 0) setSyncSummary(`${count} trip update${count === 1 ? '' : 's'} waiting to sync`);
-    });
+    }).catch(() => undefined);
     return () => {
       client.disconnect();
       clientRef.current = null;
@@ -205,6 +205,8 @@ function App() {
   };
 
   const connected = connection === 'live';
+  const isReconnecting = connection === 'reconnecting';
+  const isConnecting = connection === 'connecting';
 
   return (
     <SafeAreaProvider>
@@ -217,20 +219,19 @@ function App() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Connection</Text>
             <View style={styles.statusRow}>
-              <View style={[styles.statusDot, connected ? styles.statusLive : connection === 'connecting' ? styles.statusConnecting : styles.statusOffline]} />
+              <View style={[styles.statusDot, connected ? styles.statusLive : isConnecting || isReconnecting ? styles.statusConnecting : styles.statusOffline]} />
               <Text style={styles.statusText} accessibilityLabel={`Gateway ${connection}`}>
-                {connection === 'live' ? 'Connected' : connection === 'connecting' ? 'Connecting…' : 'Offline'}
+                {connected ? 'Connected' : isConnecting ? 'Connecting…' : isReconnecting ? 'Reconnecting…' : 'Offline'}
               </Text>
-              {connection === 'connecting' ? <ActivityIndicator size="small" color="#1c6b52" /> : null}
+              {isConnecting || isReconnecting ? <ActivityIndicator size="small" color="#1c6b52" /> : null}
             </View>
             <Text style={styles.address}>Gateway: {GATEWAY_HTTP_URL}</Text>
             <Pressable
               accessibilityRole="button"
-              disabled={connection === 'connecting'}
-              onPress={connected ? disconnect : connect}
-              style={[styles.button, connected ? styles.secondaryButton : styles.primaryButton, connection === 'connecting' && styles.disabledButton]}>
-              <Text style={[styles.buttonText, connected && styles.secondaryButtonText]}>
-                {connected ? 'Disconnect' : 'Connect to gateway'}
+              onPress={connected || isReconnecting || isConnecting ? disconnect : connect}
+              style={[styles.button, connected || isReconnecting || isConnecting ? styles.secondaryButton : styles.primaryButton]}>
+              <Text style={[styles.buttonText, (connected || isReconnecting || isConnecting) && styles.secondaryButtonText]}>
+                {connected || isReconnecting ? 'Disconnect' : isConnecting ? 'Cancel connection' : 'Connect to gateway'}
               </Text>
             </Pressable>
           </View>

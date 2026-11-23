@@ -13,6 +13,7 @@
 - Connected the React Native demo screen to development token issuance, WebSocket resume, scenario replay, and offline sync status submission.
 - Added an AsyncStorage-backed sync outbox with persisted HLC/vclock/server-version metadata, retry-on-next-sync behavior, and a warning for remote clocks more than 60 seconds ahead.
 - Added an active-trip screen with valid advance/cancel actions, local trip status persistence, queued sync retries, and server merged-state reconciliation.
+- Added mobile WebSocket heartbeats, missed-pong detection, automatic full-jitter exponential reconnects, and session resume from the last received server sequence.
 
 
 
