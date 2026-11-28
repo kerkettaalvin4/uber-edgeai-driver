@@ -4,7 +4,7 @@ React Native driver-side client for the EdgeAI logistics project. The app uses t
 
 ## Current status
 
-The React Native 0.88 application shell connects to the development gateway, can replay a synthetic drive, and queues demo trip-status operations in AsyncStorage. The persisted HLC and outbox are an initial sync workflow; driver availability, real location tracking, and maps are still pending.
+The React Native 0.88 application connects to the development gateway, replays a synthetic drive, and queues demo trip-status operations in AsyncStorage. The domain layer now includes a tested GPS Kalman filter, but it is not yet connected to device location; driver availability, native tracking, and maps are still pending.
 
 ## Requirements
 
