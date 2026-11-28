@@ -18,12 +18,13 @@
 
 ## Current feature
 
-- GPS smoothing domain feature: Kalman filtering and PRD rejection/reset/snap rules are implemented and covered by focused tests; native GPS ingestion is the next dependency.
+- Android live GPS: a Kotlin React Native bridge starts an Android location foreground service, requests fused-provider fixes, displays the required persistent notification, and emits fixes to JavaScript. The app requests location and notification permissions after the driver taps Start. Accepted fixes are passed through the existing Kalman filter and shown on screen.
+- Android GPS implementation is the current feature; native iOS location remains pending and cannot be built on this Windows machine.
 
 ## Pending
 
 - Verify gateway integration and the trip workflow in the Android emulator or on a device.
-- Implement Android and iOS native foreground location adapters and connect their fixes to the Kalman filter.
+- Implement the iOS native foreground location adapter and connect its fixes to the Kalman filter.
 - Replace the fixed demo trip with real assigned-trip data and trip details.
 - Set up the development environment with Android SDK/JDK and Docker.
 - Verify starter repository and `/ml` assets; none are in the current workspace.
@@ -36,8 +37,10 @@
 - `npm test -- --runInBand` — 4 suites, 15 tests passed after adding the gateway client test.
 - `npm test -- --runInBand` — 5 suites, 20 tests passed, including heartbeat timeout, reconnect/resume, persisted outbox, lifecycle enforcement, server merge, and HLC skew-warning coverage.
 - `npm test -- --runInBand tests/domain/kalmanFilter.test.ts` — 6 GPS filter tests passed for smoothing, rejection, reset, route snapping, and input order.
+- `npm test -- --runInBand` — 6 suites, 26 tests passed after adding live GPS UI integration.
 - `npm run lint` — passed.
 - `npm run typecheck` — passed.
+- Android `:app:assembleDebug` — blocked during React Native Gradle plugin settings setup before the app sources compiled.
 - `cd backend && npm test` — 13 gateway, sync, CRDT, and scenario tests passed.
 - `cd backend && npm run typecheck` — passed.
 - `cd backend && npm run build` — passed.
@@ -47,16 +50,18 @@
 
 ## Known bugs and limitations
 
-- Native foreground/background location tracking and assigned-trip loading are not implemented yet.
-- The Kalman filter is not connected to a live GPS feed yet; the current workspace cannot run Android emulator tooling.
+- Android live foreground-service GPS is implemented; iOS GPS adapter, route snapping input, and location upload/sync are not implemented yet.
+- Kalman output currently remains on the device and is not sent to the gateway.
 - Mobile HLC/outbox persistence uses AsyncStorage; production secure storage, server merged-state reconciliation, and cross-device conflict UI are not implemented yet.
 - Docker Compose was added but not executed because Docker is unavailable in this environment.
 - PostgreSQL sync integration was not executed because Docker is unavailable; tests use the in-memory adapter.
 - Scenario route data is synthetic because recorded GPX files were not present in the workspace.
-- Android build tools and Docker are unavailable in this environment; iOS native builds require macOS.
-- Android and iOS native builds have not been run.
+- Android SDK/build tools are present. `:app:assembleDebug` was attempted but Gradle stopped during React Native settings configuration: it rejected the `@react-native/gradle-plugin` `:shared` project directory under `node_modules`, before compiling app code. The Kotlin adapter therefore still needs a successful native build on the developer's machine. iOS native builds require macOS.
+- No Android emulator is configured here. Live GPS still needs hands-on emulator/device verification, including permission denial and notification behavior.
 
 ## GitHub commit references
+
+- Android fused-location foreground service and React Native event bridge.
 
 - `931e094` — `feat(location): implement GPS Kalman filter`.
 - `8ee0487` — `feat(gateway): add mobile heartbeat and reconnect`.

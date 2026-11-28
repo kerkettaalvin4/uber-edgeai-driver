@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  PermissionsAndroid,
   Pressable,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,11 +16,17 @@ import {
 } from 'react-native-safe-area-context';
 import { GATEWAY_HTTP_URL } from './src/config/gateway';
 import {
+  startDriverLocationTracking,
+  stopDriverLocationTracking,
+  subscribeToDriverLocation,
+} from './src/data/DriverLocation';
+import {
   GatewayClient,
   type GatewayConnectionState,
   type GatewayFrame,
 } from './src/data/GatewayClient';
 import { TRIP_STATUS_ORDINAL, type TripStatus } from './src/domain/entities/TripStatus';
+import { ConstantVelocityKalmanFilter, type FilteredLocation } from './src/domain/location/kalmanFilter';
 
 const DEMO_TRIP_ID = 'trip-mobile-demo-001';
 
@@ -87,6 +95,10 @@ function App() {
   const [tripStatus, setTripStatus] = useState<TripStatus>('EN_ROUTE_TO_PICKUP');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [syncSummary, setSyncSummary] = useState('No status has been synced yet');
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [filteredLocation, setFilteredLocation] = useState<FilteredLocation | null>(null);
+  const [locationFixCount, setLocationFixCount] = useState(0);
+  const locationFilter = useRef(new ConstantVelocityKalmanFilter());
   const scenarioFrameCount = useRef(0);
   const clientRef = useRef<GatewayClient | null>(null);
 
@@ -142,6 +154,17 @@ function App() {
     };
   }, [handleFrame]);
 
+  useEffect(() => {
+    const subscription = subscribeToDriverLocation(fix => {
+      const result = locationFilter.current.process(fix);
+      if (result.accepted) {
+        setFilteredLocation(result.location);
+        setLocationFixCount(count => count + 1);
+      }
+    });
+    return () => subscription?.remove();
+  }, []);
+
   const connect = async () => {
     setError('');
     try {
@@ -183,6 +206,40 @@ function App() {
       setError(reason instanceof Error ? reason.message : 'Could not sync trip status');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const toggleLocationTracking = async () => {
+    setError('');
+    try {
+      if (isTrackingLocation) {
+        await stopDriverLocationTracking();
+        locationFilter.current.reset();
+        setFilteredLocation(null);
+        setLocationFixCount(0);
+        setIsTrackingLocation(false);
+        return;
+      }
+      if (Platform.OS === 'android') {
+        const requestedPermissions: Array<Parameters<typeof PermissionsAndroid.requestMultiple>[0][number]> = [
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ];
+        if (Number(Platform.Version) >= 33) {
+          requestedPermissions.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        }
+        const results = await PermissionsAndroid.requestMultiple(requestedPermissions);
+        const locationGranted = results[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED
+          || results[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] === PermissionsAndroid.RESULTS.GRANTED;
+        if (!locationGranted) throw new Error('Allow location access to start live GPS tracking.');
+      }
+      locationFilter.current.reset();
+      setFilteredLocation(null);
+      setLocationFixCount(0);
+      await startDriverLocationTracking();
+      setIsTrackingLocation(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not start GPS tracking');
     }
   };
 
@@ -271,6 +328,26 @@ function App() {
               </Pressable>
             ) : null}
             <Text style={styles.muted}>{syncSummary}</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Live device GPS</Text>
+            <Text style={styles.description}>Uses the Android fused location provider. Filtered fixes are smoothed by the Kalman filter.</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={toggleLocationTracking}
+              style={[styles.button, isTrackingLocation ? styles.secondaryButton : styles.primaryButton]}>
+              <Text style={[styles.buttonText, isTrackingLocation && styles.secondaryButtonText]}>
+                {isTrackingLocation ? 'Stop GPS tracking' : 'Start GPS tracking'}
+              </Text>
+            </Pressable>
+            <Text style={styles.muted}>{isTrackingLocation ? `Tracking active · ${locationFixCount} filtered fix${locationFixCount === 1 ? '' : 'es'}` : 'Tracking is off'}</Text>
+            {filteredLocation ? (
+              <Text style={styles.dataLine}>
+                Filtered: {filteredLocation.latitude.toFixed(6)}, {filteredLocation.longitude.toFixed(6)} · {filteredLocation.speedMps.toFixed(1)} m/s
+              </Text>
+            ) : null}
+            {Platform.OS !== 'android' ? <Text style={styles.muted}>Android implementation is ready first; iOS adapter is pending.</Text> : null}
           </View>
 
           <View style={styles.card}>

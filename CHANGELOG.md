@@ -15,6 +15,7 @@
 - Added an active-trip screen with valid advance/cancel actions, local trip status persistence, queued sync retries, and server merged-state reconciliation.
 - Added mobile WebSocket heartbeats, missed-pong detection, automatic full-jitter exponential reconnects, and session resume from the last received server sequence.
 - Added a domain-only constant-velocity GPS Kalman filter with PRD accuracy/speed rejection, 30-second reset, adaptive acceleration noise, and route snapping.
+- Added Android fused-location updates through a Kotlin React Native bridge and location foreground service, including runtime permission requests, persistent notification, and live Kalman-filtered fix display.
 
 
 

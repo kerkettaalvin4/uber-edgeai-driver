@@ -4,7 +4,7 @@ React Native driver-side client for the EdgeAI logistics project. The app uses t
 
 ## Current status
 
-The React Native 0.88 application connects to the development gateway, replays a synthetic drive, and queues demo trip-status operations in AsyncStorage. The domain layer now includes a tested GPS Kalman filter, but it is not yet connected to device location; driver availability, native tracking, and maps are still pending.
+The React Native 0.88 application connects to the development gateway, replays a synthetic drive, queues demo trip-status operations in AsyncStorage, and includes an Android live GPS foreground service. Android fixes are streamed to JavaScript and smoothed through the GPS Kalman filter. The iOS GPS adapter, driver availability, and maps are still pending.
 
 ## Requirements
 
@@ -23,6 +23,8 @@ npm start
 ```
 
 In another terminal, run `npm run android` or `npm run ios` after setting up the relevant native toolchain and emulator/device.
+
+On Android, tap **Start GPS tracking** to request location access and begin live device fixes. Android shows a persistent notification while the location foreground service is active. The latest accepted, Kalman-filtered fix is shown in the app. Tap **Stop GPS tracking** to end it. The iOS adapter is not implemented yet.
 
 ## Telemetry gateway (development)
 

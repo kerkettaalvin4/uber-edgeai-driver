@@ -164,8 +164,8 @@ export class ConstantVelocityKalmanFilter {
       multiplyMatrices(residualProjection, predictedCovariance),
       transpose(residualProjection),
     );
-    const measurementContribution = gain.map((left, row) =>
-      gain.map((right, column) => measurementVariance * (
+    const measurementContribution = gain.map(left =>
+      gain.map(right => measurementVariance * (
         left[0] * right[0] + left[1] * right[1]
       )),
     );
