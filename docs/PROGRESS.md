@@ -58,6 +58,7 @@
 
 ## GitHub commit references
 
+- `931e094` — `feat(location): implement GPS Kalman filter`.
 - `8ee0487` — `feat(gateway): add mobile heartbeat and reconnect`.
 - `26d4ca8` — `feat(sync): persist mobile outbox and hybrid clock`.
 
